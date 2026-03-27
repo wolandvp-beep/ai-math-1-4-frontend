@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>AI Репетитор</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 16px;
+            background: #f5f7fa;
+        }
+        .container { max-width: 600px; margin: 0 auto; }
+        h1 { font-size: 1.6rem; text-align: center; margin-bottom: 8px; }
+        .sub { text-align: center; color: #475569; margin-bottom: 24px; }
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        button {
+            background: white;
+            border: 1px solid #cbd5e1;
+            padding: 12px 20px;
+            border-radius: 40px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        button.primary {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: white;
+        }
+        button.primary:disabled {
+            background: #94a3b8;
+            border-color: #94a3b8;
+            cursor: not-allowed;
+        }
+        button.warning {
+            background: #f59e0b;
+            border-color: #f59e0b;
+            color: white;
+        }
+        button.speak-btn {
+            background: #e2e8f0;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 30px;
+            font-size: 0.8rem;
+            margin-top: 8px;
+            display: inline-block;
+        }
+        textarea {
+            width: 100%;
+            padding: 12px;
+            font-size: 1rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 20px;
+            font-family: inherit;
+            margin-bottom: 16px;
+        }
+        .card {
+            background: white;
+            border-radius: 24px;
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px -2px rgba(0,0,0,0.05);
+        }
+        .step {
+            background: #f1f5f9;
+            padding: 12px 16px;
+            border-radius: 16px;
+            margin-bottom: 12px;
+        }
+        .hidden { display: none; }
+        .loading { text-align: center; padding: 40px; color: #3b82f6; }
+        .history-item {
+            background: #f8fafc;
+            border-left: 4px solid #3b82f6;
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 12px;
+        }
+        .nav-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 16px;
+        }
+        .info-panel {
+            background: #eef2ff;
+            padding: 12px;
+            border-radius: 16px;
+            margin-bottom: 16px;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+        .purchase-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 12px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📚 AI Репетитор</h1>
+    <div class="sub">Помогаем с домашними заданиями</div>
+
+    <div id="infoPanel" class="info-panel"></div>
+
+    <div class="action-buttons">
+        <button id="cameraBtn">📷 Фото</button>
+        <button id="textBtn">⌨️ Ввести текст</button>
+    </div>
+
+    <div id="inputBlock" class="card hidden">
+        <textarea id="taskText" rows="3" placeholder="Введите текст задачи или отредактируйте распознанный..."></textarea>
+        <button id="solveBtn" class="primary">✅ Решить задачу</button>
+    </div>
+
+    <div id="explanationBlock" class="card hidden">
+        <div id="explanationContent"></div>
+        <div class="nav-buttons">
+            <button id="prevStepBtn" class="hidden">◀ Назад</button>
+            <button id="nextStepBtn" class="primary">Дальше ▶</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="purchase-buttons">
+            <button id="buyPackBtn" class="warning">💎 Купить 10 объяснений</button>
+            <button id="subscribeBtn" class="primary">📅 Подписка на месяц</button>
+        </div>
+    </div>
+
+    <div id="historyBlock" class="card">
+        <h3>📜 История решений</h3>
+        <div id="historyList"></div>
+        <button id="clearHistoryBtn" style="margin-top:8px; background:#fee2e2;">Очистить историю</button>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.js"></script>
+<script>
+    // --- НАСТРОЙКИ ---
+    const PROXY_URL = "https://wolandvp-beep-ai-math-1-4-8e2f.twc1.net";   // ЗАМЕНИТЕ НА ВАШ URL
+    const TRIAL_LIMIT = 10;          // бесплатных объяснений всего
+
+    // --- Управление состоянием (localStorage) ---
+    function getState() {
+        const defaultState = {
+            totalExplanationsUsed: 0,
+            purchasedPackets: 0,
+            subscriptionActive: false,
+            subscriptionExpiry: null
+        };
+        const saved = localStorage.getItem('appState');
+        if (!saved) return defaultState;
+        try {
+            const parsed = JSON.parse(saved);
+            return { ...defaultState, ...parsed };
+        } catch(e) {
+            return defaultState;
+        }
+    }
+
+    function saveState(state) {
+        localStorage.setItem('appState', JSON.stringify(state));
+    }
+
+    function getDailyUsedCount() {
+        const today = new Date().toISOString().slice(0,10);
+        const dailyKey = `dailyUsed_${today}`;
+        const used = localStorage.getItem(dailyKey);
+        return used ? parseInt(used) : 0;
+    }
+
+    function incrementDailyUsed() {
+        const today = new Date().toISOString().slice(0,10);
+        const dailyKey = `dailyUsed_${today}`;
+        let used = getDailyUsedCount();
+        used++;
+        localStorage.setItem(dailyKey, used);
+        return used;
+    }
+
+    function isSubscriptionValid() {
+        const state = getState();
+        if (!state.subscriptionActive) return false;
+        if (!state.subscriptionExpiry) return false;
+        const expiry = new Date(state.subscriptionExpiry);
+        return expiry > new Date();
+    }
+
+    function canMakeRequest() {
+        const state = getState();
+        if (state.subscriptionActive && isSubscriptionValid()) {
+            return getDailyUsedCount() < 10;
+        } else {
+            const available = state.purchasedPackets * 10;
+            return available > 0;
+        }
+    }
+
+    function decrementAvailable() {
+        const state = getState();
+        if (state.subscriptionActive && isSubscriptionValid()) {
+            incrementDailyUsed();
+        } else {
+            let totalPurchased = state.purchasedPackets * 10;
+            if (totalPurchased > 0) {
+                totalPurchased--;
+                state.purchasedPackets = Math.ceil(totalPurchased / 10);
+                if (totalPurchased === 0) state.purchasedPackets = 0;
+                saveState(state);
+            }
+        }
+        state.totalExplanationsUsed = (state.totalExplanationsUsed || 0) + 1;
+        saveState(state);
+        updateUI();
+    }
+
+    function buyPacket() {
+        const state = getState();
+        state.purchasedPackets += 1;
+        saveState(state);
+        updateUI();
+        alert('Добавлено 10 объяснений!');
+    }
+
+    function activateSubscription() {
+        const state = getState();
+        const expiry = new Date();
+        expiry.setDate(expiry.getDate() + 30);
+        state.subscriptionActive = true;
+        state.subscriptionExpiry = expiry.toISOString();
+        saveState(state);
+        updateUI();
+        alert('Подписка активирована на 30 дней. Каждый день доступно 10 объяснений.');
+    }
+
+    function updateUI() {
+        const state = getState();
+        const infoDiv = document.getElementById('infoPanel');
+        const solveBtn = document.getElementById('solveBtn');
+        const canRequest = canMakeRequest();
+
+        let infoText = '';
+        if (state.subscriptionActive && isSubscriptionValid()) {
+            const usedToday = getDailyUsedCount();
+            const remainingToday = Math.max(0, 10 - usedToday);
+            infoText = `⭐ Подписка активна до ${new Date(state.subscriptionExpiry).toLocaleDateString()}. Осталось объяснений на сегодня: ${remainingToday}`;
+        } else {
+            const available = state.purchasedPackets * 10;
+            infoText = `📦 Куплено объяснений: ${available}. Бесплатный лимит: ${TRIAL_LIMIT - state.totalExplanationsUsed} из ${TRIAL_LIMIT} (использовано всего: ${state.totalExplanationsUsed})`;
+        }
+
+        const totalUsed = state.totalExplanationsUsed;
+        const hasPurchased = (state.purchasedPackets * 10) > 0;
+        const hasActiveSubscription = state.subscriptionActive && isSubscriptionValid();
+
+        if (!hasActiveSubscription && !hasPurchased && totalUsed >= TRIAL_LIMIT) {
+            infoText = `🔒 Вы использовали все ${TRIAL_LIMIT} бесплатных объяснений. Чтобы продолжить, купите пакет или оформите подписку.`;
+            if (solveBtn) solveBtn.disabled = true;
+        } else if (!canRequest && (hasActiveSubscription || hasPurchased)) {
+            if (hasActiveSubscription) infoText += `\n⚠️ Вы исчерпали лимит на сегодня. Завтра он обновится.`;
+            else infoText += `\n⚠️ У вас закончились купленные объяснения. Приобретите ещё.`;
+            if (solveBtn) solveBtn.disabled = true;
+        } else {
+            if (solveBtn) solveBtn.disabled = false;
+        }
+        infoDiv.innerHTML = infoText;
+    }
+
+    // --- Голосовое озвучивание ---
+    function speakText(text) {
+        if (!window.speechSynthesis) {
+            alert("Ваш браузер не поддерживает голосовое озвучивание");
+            return;
+        }
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'ru-RU';
+        utterance.rate = 0.9;
+        utterance.pitch = 1.1;
+        // Выбираем женский голос, если доступен
+        const voices = window.speechSynthesis.getVoices();
+        const ruVoice = voices.find(voice => voice.lang === 'ru-RU' && voice.name.includes('Female'));
+        if (ruVoice) utterance.voice = ruVoice;
+        window.speechSynthesis.speak(utterance);
+    }
+
+    // --- Остальной код (база данных, вызовы API, UI) ---
+    const db = new Dexie("AITutorDB");
+    db.version(1).stores({ history: "++id, timestamp, taskText, explanationText" });
+
+    let currentSteps = [];
+    let currentStepIndex = 0;
+    let currentTaskText = "";
+
+    // DOM
+    const cameraBtn = document.getElementById('cameraBtn');
+    const textBtn = document.getElementById('textBtn');
+    const inputBlock = document.getElementById('inputBlock');
+    const taskTextarea = document.getElementById('taskText');
+    const solveBtn = document.getElementById('solveBtn');
+    const explanationBlock = document.getElementById('explanationBlock');
+    const explanationContent = document.getElementById('explanationContent');
+    const prevStepBtn = document.getElementById('prevStepBtn');
+    const nextStepBtn = document.getElementById('nextStepBtn');
+    const historyList = document.getElementById('historyList');
+    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+    const buyPackBtn = document.getElementById('buyPackBtn');
+    const subscribeBtn = document.getElementById('subscribeBtn');
+
+    async function callProxy(action, payload) {
+        const res = await fetch(PROXY_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, ...payload })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
+        return data.result;
+    }
+
+    async function recognizeText(imageDataUrl) {
+        return await callProxy('ocr', { image: imageDataUrl });
+    }
+
+    async function explainTask(text) {
+        return await callProxy('explain', { text });
+    }
+
+    function parseSteps(text) {
+        const lines = text.split('\n').filter(l => l.trim());
+        const steps = [];
+        let cur = '';
+        for (let line of lines) {
+            if (line.match(/^Краткая запись/i) || line.match(/^Шаг \d+/i) || line.match(/^Ответ/i)) {
+                if (cur) steps.push(cur);
+                cur = line;
+            } else {
+                cur += '\n' + line;
+            }
+        }
+        if (cur) steps.push(cur);
+        return steps.length ? steps : [text];
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m]));
+    }
+
+    function renderSteps() {
+        if (!currentSteps.length) return;
+        const stepText = currentSteps[currentStepIndex];
+        explanationContent.innerHTML = `
+            <div class="step">
+                ${escapeHtml(stepText).replace(/\n/g, '<br>')}
+                <button class="speak-btn" onclick="speakText(\`${escapeHtml(stepText)}\`)">🔊 Озвучить</button>
+            </div>
+        `;
+        prevStepBtn.classList.toggle('hidden', currentStepIndex === 0);
+        nextStepBtn.textContent = (currentStepIndex === currentSteps.length-1) ? "Завершить" : "Дальше ▶";
+    }
+
+    async function saveToHistory(task, explanation) {
+        await db.history.add({ timestamp: new Date().toISOString(), taskText: task, explanationText: explanation });
+        renderHistory();
+    }
+
+    async function renderHistory() {
+        const items = await db.history.reverse().limit(20).toArray();
+        if (!items.length) { historyList.innerHTML = '<div style="color:#94a3b8;">Пока ничего нет</div>'; return; }
+        historyList.innerHTML = items.map(item => `
+            <div class="history-item">
+                <div>📖 ${escapeHtml(item.taskText.substring(0, 80))}${item.taskText.length>80?'…':''}</div>
+                <div style="font-size:0.9rem;color:#334155;">📝 ${escapeHtml(item.explanationText.substring(0, 100))}${item.explanationText.length>100?'…':''}</div>
+                <div style="font-size:0.75rem;color:#64748b;">${new Date(item.timestamp).toLocaleString()}</div>
+            </div>
+        `).join('');
+    }
+
+    async function processTask(taskText) {
+        if (!canMakeRequest()) {
+            alert('Недостаточно объяснений. Приобретите пакет или оформите подписку.');
+            return;
+        }
+        currentTaskText = taskText;
+        explanationBlock.classList.remove('hidden');
+        explanationContent.innerHTML = '<div class="loading">🤖 Думаю...</div>';
+        try {
+            const explanation = await explainTask(taskText);
+            currentSteps = parseSteps(explanation);
+            currentStepIndex = 0;
+            renderSteps();
+            await saveToHistory(taskText, explanation);
+            decrementAvailable();
+            updateUI();
+        } catch (err) {
+            alert('Ошибка: ' + err.message);
+            explanationBlock.classList.add('hidden');
+        }
+    }
+
+    cameraBtn.onclick = () => {
+        if (!canMakeRequest()) {
+            alert('Недостаточно объяснений. Приобретите пакет или оформите подписку.');
+            return;
+        }
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.capture = 'environment';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+                const dataUrl = ev.target.result;
+                inputBlock.classList.remove('hidden');
+                taskTextarea.value = 'Распознаю...';
+                solveBtn.disabled = true;
+                try {
+                    const recognized = await recognizeText(dataUrl);
+                    taskTextarea.value = recognized;
+                } catch (err) {
+                    taskTextarea.value = 'Ошибка распознавания: ' + err.message;
+                } finally {
+                    solveBtn.disabled = false;
+                }
+            };
+            reader.readAsDataURL(file);
+        };
+        input.click();
+    };
+
+    textBtn.onclick = () => {
+        if (!canMakeRequest()) {
+            alert('Недостаточно объяснений. Приобретите пакет или оформите подписку.');
+            return;
+        }
+        inputBlock.classList.remove('hidden');
+        taskTextarea.value = '';
+        taskTextarea.focus();
+    };
+
+    solveBtn.onclick = async () => {
+        const text = taskTextarea.value.trim();
+        if (!text) { alert('Введите текст задачи'); return; }
+        await processTask(text);
+    };
+
+    nextStepBtn.onclick = () => {
+        if (currentStepIndex < currentSteps.length - 1) {
+            currentStepIndex++;
+            renderSteps();
+        } else {
+            explanationBlock.classList.add('hidden');
+            inputBlock.classList.remove('hidden');
+            taskTextarea.value = currentTaskText;
+            currentSteps = [];
+        }
+    };
+
+    prevStepBtn.onclick = () => {
+        if (currentStepIndex > 0) {
+            currentStepIndex--;
+            renderSteps();
+        }
+    };
+
+    clearHistoryBtn.onclick = async () => {
+        if (confirm('Удалить всю историю?')) {
+            await db.history.clear();
+            renderHistory();
+        }
+    };
+
+    buyPackBtn.onclick = buyPacket;
+    subscribeBtn.onclick = activateSubscription;
+
+    updateUI();
+    renderHistory();
+</script>
+</body>
+</html>
