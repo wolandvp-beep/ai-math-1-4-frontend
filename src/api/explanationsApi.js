@@ -1,0 +1,35 @@
+const PROXY_URL = 'https://wolandvp-beep-ai-math-1-4-8e2f.twc1.net';
+
+export async function explainTask(text) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+  try {
+    const response = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'explain', text }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+    const raw = await response.text();
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new Error('Сервер вернул непонятный ответ.');
+    }
+
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    if (data.error) throw new Error(data.error);
+    if (typeof data.result !== 'string') throw new Error('Неожиданный формат ответа.');
+
+    return data.result;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('Сервер отвечает слишком долго. Попробуйте ещё раз.');
+    }
+    throw error;
+  }
+}
