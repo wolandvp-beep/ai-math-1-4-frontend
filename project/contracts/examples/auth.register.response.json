@@ -1,9 +1,0 @@
-{
-  "token": "jwt_or_session_token_here",
-  "user": {
-    "id": "user_456",
-    "name": "Ирина",
-    "email": "irina@example.com",
-    "childName": "Соня"
-  }
-}
