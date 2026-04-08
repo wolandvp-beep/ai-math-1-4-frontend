@@ -1,0 +1,26 @@
+Режимы запуска Решайки
+
+1. Mock mode
+   В src/config/env.js:
+   API_MODE = 'mock'
+
+   Что будет:
+   - вход
+   - регистрация
+   - профиль
+   - подписка
+   - восстановление покупки
+   работают через встроенный mock adapter
+
+2. Remote mode
+   В src/config/env.js:
+   API_MODE = 'remote'
+   API_BASE_URL = 'https://your-real-backend.example.com/api'
+
+   Что будет:
+   - фронт начнёт ходить в настоящий backend
+
+Практический порядок:
+- пока backend не готов, тестируйте на mock
+- когда backend готов, меняйте API_MODE на remote
+- структура фронта останется той же

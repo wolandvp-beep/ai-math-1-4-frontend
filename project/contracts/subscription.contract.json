@@ -1,0 +1,21 @@
+{
+  "GET /billing/subscription": {
+    "headers": {
+      "Authorization": "Bearer <token>"
+    },
+    "response_200": {
+      "status": "inactive|active|grace",
+      "plan": "monthly|family",
+      "renewalAt": "ISO date",
+      "source": "app_store|google_play|server"
+    }
+  },
+  "POST /billing/restore": {
+    "headers": {
+      "Authorization": "Bearer <token>"
+    },
+    "response_200": {
+      "ok": true
+    }
+  }
+}
